@@ -1,0 +1,1137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photo Sorter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #e9e6e0;
+    --card: #fbfaf7;
+    --line: #e2ded6;
+    --ink: #1d1b18;
+    --muted: #96918a;
+    --tile: 64px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; overflow: hidden; background: var(--bg); color: var(--ink);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased; user-select: none;
+  }
+  .app {
+    position: fixed; inset: 14px; display: flex; flex-direction: column;
+    padding: 24px 30px 20px; background: var(--card);
+    border: 1px solid #dcd8d0; border-radius: 22px;
+    box-shadow: 0 1px 2px rgba(60, 50, 30, .05), 0 22px 60px -22px rgba(60, 50, 30, .22);
+  }
+  .app.drop { border: 1.5px dashed #9a948a; background: #f6f4ef; }
+
+  .crumb { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+  .crumb b { color: #5b5750; font-weight: 500; }
+  h1 {
+    margin: 8px 0 0; font-size: clamp(30px, 3.5vw, 52px); line-height: 1.08;
+    font-weight: 600; letter-spacing: -0.035em; cursor: text; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  h1 .serif {
+    font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400;
+    font-size: 1.14em; letter-spacing: -0.01em; outline: none; padding: 0 .06em;
+    border-radius: 6px; user-select: text;
+  }
+  h1 .serif:focus { background: #f0ece3; }
+
+  .stats { display: flex; gap: clamp(22px, 3.4vw, 54px); margin-top: 16px; }
+  .stat .num { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat .lbl { margin-top: 3px; font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+  main {
+    flex: 1; min-height: 0; margin-top: 18px; display: grid; gap: 22px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.08fr);
+  }
+  .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .col.right { padding-bottom: 50px; }
+  .sec { font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px 2px; }
+  .sec.gap { margin-top: 14px; }
+  .grid { flex: 1; min-height: 0; display: grid; gap: 10px; }
+  .grid.photos { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+  .grid.videos { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .grid.videos .card { padding-left: 8px; padding-right: 8px; }
+  .grid.videos .card-head { gap: 5px; font-size: 12px; }
+  .grid.cleanup { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card {
+    display: flex; flex-direction: column; min-width: 0; min-height: 0;
+    padding: 10px 10px 9px; background: #fff; border: 1px solid var(--line); border-radius: 14px;
+  }
+  .card-head { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .card-head .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill {
+    flex: none; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+    padding: 2px 7px; border-radius: 99px; background: #f1eee8; color: #5d5952;
+  }
+  .card-body { flex: 1; min-height: 0; margin-top: 8px; }
+
+  .pile-area { position: relative; flex: 1; min-height: 0; }
+  .hint {
+    position: absolute; left: 50%; top: 50%; width: min(300px, 80%); aspect-ratio: 1;
+    transform: translate(-50%, -50%); border: 1.5px dashed #d5d0c6; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    padding: 40px; font-size: 13.5px; line-height: 1.5; color: var(--muted);
+  }
+  .status { height: 26px; line-height: 26px; text-align: center; font-size: 13px; font-weight: 500; color: #76716a; font-variant-numeric: tabular-nums; }
+
+  /* ---- tiles: positioned only with transforms ---- */
+  .layer { position: fixed; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 5; }
+  #pile { will-change: transform; }
+  .tile {
+    position: absolute; left: 0; top: 0; width: var(--tile); height: var(--tile);
+    margin: calc(var(--tile) / -2) 0 0 calc(var(--tile) / -2);
+    border: 3px solid #fff; border-radius: 5px; background: #ece8df center / cover no-repeat;
+    box-shadow: 0 2px 7px rgba(40, 30, 15, .26); transform: scale(0); contain: strict;
+  }
+  .tile.live { will-change: transform; }
+  .tile.doc {
+    background: #f3efe6; color: #a39c8e; display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; letter-spacing: .02em;
+  }
+  .tile.vid::after {
+    content: ""; position: absolute; right: 5px; bottom: 5px; border-style: solid;
+    border-width: 6px 0 6px 10px; border-color: transparent transparent transparent rgba(255, 255, 255, .92);
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, .5));
+  }
+
+  /* ---- toolbar ---- */
+  .toolbar {
+    position: fixed; right: 30px; bottom: 28px; z-index: 30; display: flex; gap: 2px; padding: 5px;
+    background: #1f1d1a; border-radius: 13px; box-shadow: 0 10px 30px -8px rgba(0, 0, 0, .45);
+    transition: opacity .35s;
+  }
+  .toolbar button {
+    font: 500 12.5px Inter, system-ui, sans-serif; color: #ece9e3; background: none; border: 0;
+    padding: 7px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  }
+  .toolbar button:hover:not(:disabled) { background: rgba(255, 255, 255, .11); }
+  .toolbar button:disabled { opacity: .32; cursor: default; }
+  .toolbar button.primary { background: #fbfaf7; color: #1d1b18; font-weight: 600; }
+  .toolbar button.primary:hover:not(:disabled) { background: #fff; }
+  body.sorting .toolbar, body.hide-tools .toolbar { opacity: 0; pointer-events: none; }
+
+  /* ---- organise panel ---- */
+  .panel {
+    position: absolute; left: 50%; top: 50%; z-index: 20; width: min(370px, 96%);
+    max-height: 100%; overflow: auto; transform: translate(-50%, -50%); padding: 22px 22px 18px;
+    background: #fff; border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: 0 24px 60px -20px rgba(60, 50, 30, .35); user-select: text;
+    animation: panel-in .35s cubic-bezier(.2, .9, .3, 1.2);
+  }
+  @keyframes panel-in { from { opacity: 0; transform: translate(-50%, -46%) scale(.96); } }
+  .panel h3 { margin: 0 0 8px; font-size: 19px; font-weight: 650; letter-spacing: -0.02em; }
+  .panel p { margin: 0 0 14px; font-size: 13.5px; line-height: 1.5; color: #5d5952; }
+  .panel p b { color: var(--ink); font-weight: 600; }
+  .seg { display: flex; padding: 3px; margin-bottom: 14px; background: #f1eee8; border-radius: 10px; }
+  .seg button {
+    flex: 1; font: 500 12.5px Inter, system-ui, sans-serif; color: #6b665f; background: none; border: 0;
+    padding: 7px 6px; border-radius: 8px; cursor: pointer;
+  }
+  .seg button.on { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+  .row { display: flex; gap: 8px; }
+  .btn {
+    flex: 1; font: 600 13px Inter, system-ui, sans-serif; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer;
+  }
+  .btn.dark { background: #1f1d1a; border-color: #1f1d1a; color: #fff; }
+  .btn:hover { filter: brightness(.96); }
+  .btn.dark:hover { filter: brightness(1.25); }
+  .bar { height: 6px; margin: 4px 0 10px; background: #efece6; border-radius: 99px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: #1f1d1a; border-radius: 99px; transform-origin: left center; transform: scaleX(0); }
+  .small { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .fails { max-height: 120px; overflow: auto; margin: 0 0 14px; padding: 8px 10px; background: #fbf1ee; border-radius: 10px; font-size: 12px; line-height: 1.5; color: #8a3b2c; }
+  .fails div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <div class="crumb">Personal / <b>Sorter</b></div>
+  <h1 id="title" title="Click to edit">Sorting my <span class="serif" id="folderName" spellcheck="false">photos</span> folder</h1>
+
+  <div class="stats">
+    <div class="stat"><div class="num" id="stTotal">0</div><div class="lbl">Total files</div></div>
+    <div class="stat"><div class="num" id="stPhotos">0</div><div class="lbl">Photos</div></div>
+    <div class="stat"><div class="num" id="stVideos">0</div><div class="lbl">Videos</div></div>
+    <div class="stat"><div class="num" id="stDupes">0</div><div class="lbl">Duplicates</div></div>
+    <div class="stat"><div class="num" id="stSpace">0 MB</div><div class="lbl">Space to free</div></div>
+  </div>
+
+  <main>
+    <section class="col">
+      <div class="sec">Photos</div>
+      <div class="grid photos" id="gPhotos"></div>
+    </section>
+    <section class="col">
+      <div class="pile-area" id="pileArea">
+        <div class="hint" id="hint">Choose a folder, drop one here,<br>or try the Demo</div>
+        <div class="panel" id="panel" hidden></div>
+      </div>
+      <div class="status" id="status">Choose a folder to begin</div>
+    </section>
+    <section class="col right">
+      <div class="sec">Videos</div>
+      <div class="grid videos" id="gVideos"></div>
+      <div class="sec gap">Cleanup</div>
+      <div class="grid cleanup" id="gCleanup"></div>
+    </section>
+  </main>
+</div>
+
+<div class="layer" id="pile"></div>
+<div class="layer" id="fly"></div>
+
+<div class="toolbar" id="toolbar">
+  <button id="bChoose">Choose folder</button>
+  <button id="bDemo">Demo</button>
+  <button id="bReplay" disabled title="R">Replay</button>
+  <button id="bSort" class="primary" disabled title="Space">Sort</button>
+  <button id="bOrganise" disabled>Organise</button>
+</div>
+<input type="file" id="dirInput" webkitdirectory multiple hidden>
+
+<script>
+(() => {
+'use strict';
+
+/* ───────────────────────── config ───────────────────────── */
+const TILE = 64;                 // base tile size in CSS px; everything else is transform: scale()
+const MAX_TILES = 1500;          // never animate more than this
+const SCAN_POOL = 6;
+const ORG_POOL = 4;
+const MB = 1024 * 1024;
+
+const CATS = [
+  { id: 'screens',  group: 'photos',  name: 'Screenshots',     color: '#8d93a8', path: ['Photos', 'Screenshots'] },
+  { id: 'night',    group: 'photos',  name: 'Night & moody',   color: '#3d4285', path: ['Photos', 'Night & moody'] },
+  { id: 'golden',   group: 'photos',  name: 'Golden hour',     color: '#f0a23c', path: ['Photos', 'Golden hour'] },
+  { id: 'sky',      group: 'photos',  name: 'Sky & sea',       color: '#4a9fe0', path: ['Photos', 'Sky & sea'] },
+  { id: 'portrait', group: 'photos',  name: 'Portrait shots',  color: '#dc7b93', path: ['Photos', 'Portrait shots'] },
+  { id: 'everyday', group: 'photos',  name: 'Everyday shots',  color: '#6dbb7b', path: ['Photos', 'Everyday shots'] },
+  { id: 'quick',    group: 'videos',  name: 'Quick clips',     color: '#a773e0', path: ['Videos', 'Quick clips'] },
+  { id: 'broll',    group: 'videos',  name: 'B-roll',          color: '#e56b55', path: ['Videos', 'B-roll'] },
+  { id: 'long',     group: 'videos',  name: 'Long takes',      color: '#2fa39c', path: ['Videos', 'Long takes'] },
+  { id: 'dupes',    group: 'cleanup', name: 'Duplicates',      color: '#c94f4f', path: ['Duplicates'] },
+  { id: 'docs',     group: 'cleanup', name: 'Docs & other',    color: '#b9b09d', path: ['Docs & other'] },
+];
+const IMG_EXT = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'heic', 'heif', 'tif', 'tiff', 'dng', 'cr2', 'cr3', 'nef', 'arw', 'raf', 'orf', 'rw2']);
+const VID_EXT = new Set(['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', '3gp', 'mts', 'm2ts', 'wmv', 'mpg', 'mpeg']);
+
+/* ───────────────────────── dom ───────────────────────── */
+const $ = (id) => document.getElementById(id);
+const el = {
+  app: $('app'), title: $('title'), folderName: $('folderName'), pileArea: $('pileArea'), hint: $('hint'),
+  panel: $('panel'), status: $('status'), pile: $('pile'), fly: $('fly'),
+  stTotal: $('stTotal'), stPhotos: $('stPhotos'), stVideos: $('stVideos'), stDupes: $('stDupes'), stSpace: $('stSpace'),
+  bChoose: $('bChoose'), bDemo: $('bDemo'), bReplay: $('bReplay'), bSort: $('bSort'), bOrganise: $('bOrganise'),
+  dirInput: $('dirInput'),
+};
+const cards = {};
+for (const c of CATS) {
+  const d = document.createElement('div');
+  d.className = 'card';
+  d.innerHTML = `<div class="card-head"><span class="dot" style="background:${c.color}"></span><span class="name"></span><span class="pill">0</span></div><div class="card-body"></div>`;
+  d.querySelector('.name').textContent = c.name;
+  $({ photos: 'gPhotos', videos: 'gVideos', cleanup: 'gCleanup' }[c.group]).appendChild(d);
+  cards[c.id] = { cat: c, pill: d.querySelector('.pill'), body: d.querySelector('.card-body'), n: 0, count: 0, shown: -1, next: 0, bump: 0, geom: null };
+}
+
+/* ───────────────────────── state ───────────────────────── */
+const S = {
+  phase: 'idle',        // idle | scanning | ready | sorting | done
+  token: 0,             // bumps whenever a new scan starts, to cancel the old one
+  items: [], tiles: [],
+  root: null, folder: '', demo: false, canWrite: false,
+  animTotal: 0,
+  pile: { cx: 0, cy: 0, c: 10, size: 24, angle: 0 },
+  popping: [], flying: [],
+  order: [], depTimes: [], nextDep: 0, sortStart: 0,
+  stats: { total: 0, photos: 0, videos: 0, dupes: 0, space: 0 }, statsDirty: true,
+  urls: [],
+  log: null,            // undo log of the last organise
+  mode: 'move',
+  busy: false,
+};
+const opts = { forceFallback: false };   // test hook: skip FileSystemHandle.move()
+
+/* ───────────────────────── helpers ───────────────────────── */
+const fmt = (n) => n.toLocaleString('en-US');
+const fmtBytes = (b) => b >= 1024 * MB ? (b / 1024 / MB).toFixed(1) + ' GB' : b >= MB ? (b / MB).toFixed(b >= 100 * MB ? 0 : 1) + ' MB' : b > 0 ? Math.max(1, Math.round(b / 1024)) + ' KB' : '0 MB';
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const extOf = (name) => { const i = name.lastIndexOf('.'); return i > 0 ? name.slice(i + 1).toLowerCase() : ''; };
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const setStatus = (t) => { el.status.textContent = t; };
+const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
+
+async function pool(list, size, fn) {
+  let i = 0;
+  const run = async () => { while (i < list.length) { const k = i++; await fn(list[k], k); } };
+  await Promise.all(Array.from({ length: Math.min(size, list.length) }, run));
+}
+
+function setFolderName(name) { el.folderName.textContent = name; }
+
+function refreshButtons() {
+  const p = S.phase;
+  el.bSort.disabled = p !== 'ready';
+  el.bReplay.disabled = !(p === 'ready' || p === 'sorting' || p === 'done') || S.busy;
+  el.bOrganise.disabled = !(p === 'ready' || p === 'done');
+  el.bChoose.disabled = el.bDemo.disabled = S.busy;
+  document.body.classList.toggle('sorting', p === 'sorting');
+  el.hint.hidden = p !== 'idle';
+}
+
+/* ───────────────────────── geometry ───────────────────────── */
+function computePile() {
+  const r = el.pileArea.getBoundingClientRect();
+  const R = Math.max(60, Math.min(r.width, r.height) / 2 - 6);
+  const n = Math.max(1, S.animTotal);
+  let c = R / (Math.sqrt(n) + 1.4);
+  let size = 2.7 * c;                       // tiles overlap a little
+  if (size > TILE) { size = TILE; c = size / 2.7; }
+  S.pile.cx = r.left + r.width / 2; S.pile.cy = r.top + r.height / 2;
+  S.pile.c = c; S.pile.size = Math.max(6, size);
+}
+const GOLDEN = Math.PI * (3 - Math.sqrt(5));   // 137.5° – the sunflower angle
+function placeInPile(t) {
+  const r = S.pile.c * Math.sqrt(t.idx + 0.5), a = t.idx * GOLDEN;
+  t.px = r * Math.cos(a); t.py = r * Math.sin(a);
+}
+function pileTransform(t, k) {
+  t.el.style.transform = `translate3d(${t.px.toFixed(1)}px,${t.py.toFixed(1)}px,0) rotate(${t.tilt.toFixed(3)}rad) scale(${(S.pile.size / TILE * k).toFixed(4)})`;
+}
+
+// Largest square slot so that n tiles fit in a w×h box.
+function computeCardGeom(card) {
+  const r = card.body.getBoundingClientRect();
+  const n = Math.max(1, card.n);
+  let best = 0, cols = 1;
+  for (let c = 1; c <= n; c++) {
+    const s = Math.min(r.width / c, r.height / Math.ceil(n / c));
+    if (s > best) { best = s; cols = c; }
+  }
+  const s = Math.min(best, 46);
+  const gap = Math.max(1, s * 0.1);
+  card.geom = { x: r.left, y: r.top, s, cols, scale: Math.max(0.01, (s - gap) / TILE) };
+}
+const slotX = (g, k) => g.x + (k % g.cols + 0.5) * g.s;
+const slotY = (g, k) => g.y + (Math.floor(k / g.cols) + 0.5) * g.s;
+function cardTransform(t) {
+  const g = t.card.geom;
+  t.el.style.transform = `translate3d(${slotX(g, t.slot).toFixed(1)}px,${slotY(g, t.slot).toFixed(1)}px,0) scale(${g.scale.toFixed(4)})`;
+}
+function relayout() {
+  computePile();
+  for (const id in cards) computeCardGeom(cards[id]);
+  for (const t of S.tiles) {
+    if (t.where === 'pile') { placeInPile(t); if (!t.popping) pileTransform(t, 1); }
+    else if (t.where === 'card') cardTransform(t);
+  }
+}
+addEventListener('resize', relayout);
+
+/* ───────────────────────── tiles ───────────────────────── */
+function addTile(item, now) {
+  const t = { el: document.createElement('div'), item, items: [item], idx: S.tiles.length, px: 0, py: 0, tilt: rand(-0.38, 0.38), where: 'pile', popping: true, card: null, slot: 0 };
+  t.el.className = 'tile live';
+  if (item.thumb) t.el.style.backgroundImage = `url(${item.thumb})`;
+  else { t.el.classList.add('doc'); t.el.textContent = (item.ext || 'file').slice(0, 4).toUpperCase(); }
+  if (item.kind === 'video') t.el.classList.add('vid');
+  placeInPile(t);
+  el.pile.appendChild(t.el);
+  S.tiles.push(t);
+  S.popping.push({ t, t0: now ?? performance.now() });
+  return t;
+}
+
+function resetScene() {
+  S.token++;
+  for (const u of S.urls) URL.revokeObjectURL(u);
+  S.urls = []; S.items = []; S.tiles = []; S.popping = []; S.flying = []; S.order = [];
+  el.pile.textContent = ''; el.fly.textContent = '';
+  S.log = null; S.root = null; S.demo = false; S.canWrite = false; S.animTotal = 0;
+  resetCounts();
+  S.stats.total = 0;
+  hidePanel();
+}
+function resetCounts() {
+  for (const id in cards) { const c = cards[id]; c.count = 0; c.next = 0; c.bump = 0; c.pill.style.transform = ''; }
+  Object.assign(S.stats, { photos: 0, videos: 0, dupes: 0, space: 0 });
+  S.statsDirty = true;
+}
+function renderStats() {
+  S.statsDirty = false;
+  el.stTotal.textContent = fmt(S.stats.total);
+  el.stPhotos.textContent = fmt(S.stats.photos);
+  el.stVideos.textContent = fmt(S.stats.videos);
+  el.stDupes.textContent = fmt(S.stats.dupes);
+  el.stSpace.textContent = fmtBytes(S.stats.space);
+  for (const id in cards) { const c = cards[id]; if (c.shown !== c.count) { c.shown = c.count; c.pill.textContent = fmt(c.count); } }
+}
+
+/* ───────────────────────── the one animation loop ───────────────────────── */
+const easeOutBack = (x) => { const c1 = 2.2, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const easeInOut = (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+let lastT = performance.now();
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  const P = S.pile;
+  P.angle += dt * 0.04;
+  el.pile.style.transform = `translate3d(${P.cx.toFixed(1)}px,${P.cy.toFixed(1)}px,0) rotate(${P.angle.toFixed(4)}rad)`;
+
+  // pop-in
+  for (let i = S.popping.length - 1; i >= 0; i--) {
+    const p = S.popping[i], x = (now - p.t0) / 420;
+    if (x < 0) continue;
+    if (x >= 1) {
+      p.t.popping = false; pileTransform(p.t, 1); p.t.el.classList.remove('live');
+      S.popping[i] = S.popping[S.popping.length - 1]; S.popping.pop();
+    } else pileTransform(p.t, Math.max(0, easeOutBack(x)));
+  }
+
+  if (S.phase === 'sorting') {
+    const ts = now - S.sortStart;
+    while (S.nextDep < S.order.length && S.depTimes[S.nextDep] <= ts) depart(S.order[S.nextDep++], now);
+  }
+
+  // flights
+  for (let i = S.flying.length - 1; i >= 0; i--) {
+    const t = S.flying[i], f = t.f, x = (now - f.t0) / f.dur, g = t.card.geom;
+    const tx = slotX(g, t.slot), ty = slotY(g, t.slot);
+    if (x >= 1) {
+      t.where = 'card'; cardTransform(t); t.el.classList.remove('live'); land(t);
+      S.flying[i] = S.flying[S.flying.length - 1]; S.flying.pop();
+      continue;
+    }
+    const e = easeInOut(x), u = 1 - e;
+    const mx = (f.x0 + tx) / 2 + f.cxo, my = (f.y0 + ty) / 2 + f.cyo;        // bezier control point
+    const X = u * u * f.x0 + 2 * u * e * mx + e * e * tx;
+    const Y = u * u * f.y0 + 2 * u * e * my + e * e * ty;
+    const sc = (f.s0 + (g.scale - f.s0) * e) * (1 + 0.3 * Math.sin(Math.PI * x));
+    t.el.style.transform = `translate3d(${X.toFixed(1)}px,${Y.toFixed(1)}px,0) rotate(${(f.r0 * u * u).toFixed(3)}rad) scale(${sc.toFixed(4)})`;
+  }
+
+  // count-pill bumps
+  for (const id in cards) {
+    const c = cards[id];
+    if (c.bump > 0) {
+      c.bump *= Math.exp(-dt * 10);
+      if (c.bump < 0.01) { c.bump = 0; c.pill.style.transform = ''; }
+      else c.pill.style.transform = `scale(${(1 + 0.32 * c.bump).toFixed(3)})`;
+    }
+  }
+  if (S.statsDirty) renderStats();
+  if (S.phase === 'sorting' && S.nextDep >= S.order.length && S.flying.length === 0) finishSort(now);
+  requestAnimationFrame(frame);
+}
+
+function depart(t, now) {
+  const P = S.pile, ca = Math.cos(P.angle), sa = Math.sin(P.angle);
+  const x0 = P.cx + ca * t.px - sa * t.py, y0 = P.cy + sa * t.px + ca * t.py;
+  let r0 = (P.angle + t.tilt) % (2 * Math.PI);
+  if (r0 > Math.PI) r0 -= 2 * Math.PI;
+  t.card = cards[t.item.cat]; t.slot = t.card.next++;
+  const g = t.card.geom, dx = slotX(g, t.slot) - x0, dy = slotY(g, t.slot) - y0;
+  const dist = Math.hypot(dx, dy) || 1, bend = rand(0.12, 0.3) * (Math.random() < 0.5 ? -1 : 1);
+  t.f = { t0: now, dur: rand(720, 950), x0, y0, r0, s0: P.size / TILE,
+          cxo: -dy / dist * dist * bend, cyo: dx / dist * dist * bend - dist * 0.16 };
+  t.where = 'fly';
+  t.el.classList.add('live');
+  el.fly.appendChild(t.el);
+  S.flying.push(t);
+}
+
+function land(t) {
+  const c = t.card, st = S.stats;
+  for (const it of t.items) {
+    c.count++;
+    if (it.cat === 'dupes') { st.dupes++; st.space += it.size; }
+    else if (c.cat.group === 'photos') st.photos++;
+    else if (c.cat.group === 'videos') st.videos++;
+  }
+  c.bump = 1; S.statsDirty = true;
+}
+
+/* ───────────────────────── sort / replay ───────────────────────── */
+function startSort() {
+  if (S.phase !== 'ready') return;
+  hidePanel();
+  resetCounts();
+  relayout();
+  const order = S.tiles.slice();
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  const n = order.length;
+  const total = Math.max(5000, Math.min(7600, 5000 + n * 4));   // whole sort: 5–8 s whatever the count
+  const span = total - 720;
+  // departures accelerate: fraction gone by time t is (t/span)^2.7
+  S.depTimes = order.map((_, i) => span * Math.pow(i / Math.max(1, n - 1), 1 / 2.7));
+  S.order = order; S.nextDep = 0; S.sortStart = performance.now();
+  S.phase = 'sorting';
+  setStatus('Sorting…');
+  refreshButtons();
+}
+
+function finishSort(now) {
+  S.phase = 'done';
+  setStatus(`All sorted ✓ in ${((now - S.sortStart) / 1000).toFixed(1)}s`);
+  refreshButtons();
+  const token = S.token;
+  setTimeout(() => { if (S.token === token && S.phase === 'done') showOrganise(); }, 650);
+}
+
+function replay() {
+  if (!(S.phase === 'ready' || S.phase === 'sorting' || S.phase === 'done') || S.busy) return;
+  hidePanel();
+  S.flying = []; S.popping = []; S.order = [];
+  resetCounts();
+  computePile();
+  const now = performance.now(), n = S.tiles.length, frag = document.createDocumentFragment();
+  for (const t of S.tiles) {
+    t.where = 'pile'; t.popping = true; t.card = null;
+    placeInPile(t);
+    t.el.style.transform = 'scale(0)';
+    t.el.classList.add('live');
+    frag.appendChild(t.el);
+    S.popping.push({ t, t0: now + 60 + 800 * t.idx / n });
+  }
+  el.pile.appendChild(frag);
+  S.phase = 'ready';
+  setStatus('Press Sort');
+  refreshButtons();
+}
+
+/* ───────────────────────── analysing files ───────────────────────── */
+function thumbCanvas() { const c = document.createElement('canvas'); c.width = c.height = 96; return c; }
+function drawCover(ctx, src, w, h) {
+  const s = Math.min(w, h);
+  ctx.drawImage(src, (w - s) / 2, (h - s) / 2, s, s, 0, 0, 96, 96);
+}
+function averageColour(canvas) {
+  const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, 96, 96).data;
+  let r = 0, g = 0, b = 0;
+  for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+  const n = d.length / 4;
+  r /= n; g /= n; b /= n;
+  return { r, g, b, bright: (0.299 * r + 0.587 * g + 0.114 * b) / 255 };
+}
+function canvasToURL(canvas) {
+  return new Promise((res) => canvas.toBlob((b) => {
+    if (!b) return res(null);
+    const u = URL.createObjectURL(b); S.urls.push(u); res(u);
+  }, 'image/jpeg', 0.82));
+}
+
+async function analyseImage(file) {
+  const canvas = thumbCanvas(), ctx = canvas.getContext('2d', { willReadFrequently: true });
+  let w, h;
+  try {
+    const bmp = await createImageBitmap(file);
+    w = bmp.width; h = bmp.height;
+    drawCover(ctx, bmp, w, h);
+    bmp.close();
+  } catch (e) {
+    // second chance through <img> (some formats decode there but not in createImageBitmap)
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      w = img.naturalWidth; h = img.naturalHeight;
+      if (!w || !h) throw new Error('empty image');
+      drawCover(ctx, img, w, h);
+    } finally { URL.revokeObjectURL(url); }
+  }
+  return { canvas, w, h, avg: averageColour(canvas) };
+}
+
+function analyseVideo(file) {
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    let done = false, dur = NaN, target = 1;
+    const finish = (canvas) => {
+      if (done) return; done = true;
+      clearTimeout(timer); clearTimeout(durTimer);
+      v.onseeked = v.onerror = v.onloadedmetadata = v.ondurationchange = null;
+      v.removeAttribute('src'); try { v.load(); } catch (e) {}
+      URL.revokeObjectURL(url);
+      resolve({ dur, canvas });
+    };
+    let durTimer = 0;
+    const timer = setTimeout(() => finish(null), 9000);
+    const seek = () => {
+      target = Math.min(1, (isFinite(dur) ? dur : 2) / 2);   // frame at 1s (or the middle of very short clips)
+      v.onseeked = () => {
+        if (Math.abs(v.currentTime - target) > 0.6) return;
+        try {
+          const c = thumbCanvas();
+          drawCover(c.getContext('2d'), v, v.videoWidth, v.videoHeight);
+          finish(v.videoWidth ? c : null);
+        } catch (e) { finish(null); }
+      };
+      v.currentTime = target;
+    };
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.onerror = () => finish(null);
+    v.onloadedmetadata = () => {
+      dur = v.duration;
+      if (isFinite(dur)) return seek();
+      // Some recordings (e.g. screen captures) have no duration in the header: seeking far past the end reveals it.
+      v.ondurationchange = () => { if (isFinite(v.duration)) { dur = v.duration; v.ondurationchange = null; clearTimeout(durTimer); seek(); } };
+      durTimer = setTimeout(() => { v.ondurationchange = null; seek(); }, 2500);
+      v.currentTime = 1e101;
+    };
+    v.src = url;
+  });
+}
+
+function classifyImage(name, ext, info) {
+  const lower = name.toLowerCase();
+  if (lower.includes('screenshot') || lower.includes('screen shot')) return 'screens';
+  if (!info) return 'everyday';                       // can't decode (HEIC in Chrome, RAW…)
+  const { w, h, avg } = info;
+  if (ext === 'png' && h / w >= 1.7 && h / w <= 2.4) return 'screens';   // phone-screen shape
+  if (avg.bright < 0.3) return 'night';
+  if (avg.r - avg.b > 34) return 'golden';            // clearly more red than blue
+  if (avg.b - avg.r > 3) return 'sky';
+  if (h > w) return 'portrait';
+  return 'everyday';
+}
+const classifyVideo = (dur) => !isFinite(dur) ? 'broll' : dur < 10 ? 'quick' : dur <= 60 ? 'broll' : 'long';
+
+async function hashFile(file) {
+  let buf;
+  if (file.size <= 8 * MB) buf = await file.arrayBuffer();
+  else {
+    const [a, b] = await Promise.all([file.slice(0, 4 * MB).arrayBuffer(), file.slice(file.size - 4 * MB).arrayBuffer()]);
+    const joined = new Uint8Array(8 * MB);
+    joined.set(new Uint8Array(a), 0); joined.set(new Uint8Array(b), 4 * MB);
+    buf = joined.buffer;
+  }
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', buf));
+  let s = '';
+  for (const x of h) s += x.toString(16).padStart(2, '0');
+  return s;
+}
+
+function kindOf(name, type) {
+  const ext = extOf(name);
+  if (IMG_EXT.has(ext)) return 'image';
+  if (VID_EXT.has(ext)) return 'video';
+  if (ext === 'svg') return 'other';
+  if (type && type.startsWith('image/')) return 'image';
+  if (type && type.startsWith('video/')) return 'video';
+  return 'other';
+}
+
+// Should the j-th finished file (of n) get an animated tile?
+function wantsTile(j, n) {
+  if (n <= MAX_TILES) return true;
+  const a = MAX_TILES - CATS.length;      // keep a few spare so every category can show at least one tile
+  return Math.floor((j + 1) * a / n) > Math.floor(j * a / n);
+}
+
+/* entries: [{ name, handle?, file? }] – files directly inside the chosen folder only */
+async function scan(entries, folder, root) {
+  resetScene();
+  const token = S.token;
+  S.root = root || null; S.canWrite = !!root; S.folder = folder;
+  setFolderName(folder);
+  S.phase = 'scanning'; refreshButtons();
+  setStatus('Reading folder…');
+
+  const items = [];
+  await pool(entries, 16, async (e) => {
+    try {
+      const file = e.file || await e.handle.getFile();
+      items.push({ name: e.name, handle: e.handle || null, file, size: file.size, ext: extOf(e.name), kind: kindOf(e.name, file.type), cat: 'docs', thumb: null, hash: null });
+    } catch (err) { /* unreadable entry: leave it alone */ }
+  });
+  if (token !== S.token) return;
+  items.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  S.items = items;
+  const n = items.length;
+  if (!n) { S.phase = 'idle'; refreshButtons(); setStatus('No files directly inside this folder'); return; }
+
+  S.animTotal = Math.min(n, n <= MAX_TILES ? n : MAX_TILES - CATS.length);
+  computePile();
+
+  // only files that share a byte size can be duplicates
+  const bySize = new Map();
+  for (const it of items) bySize.set(it.size, (bySize.get(it.size) || 0) + 1);
+  const canHash = !!(window.crypto && crypto.subtle);
+
+  let finished = 0;
+  await pool(items, SCAN_POOL, async (it) => {
+    if (token !== S.token) return;
+    let canvas = null;
+    try {
+      if (it.kind === 'image') {
+        let info = null;
+        try { info = await analyseImage(it.file); } catch (e) {}
+        it.cat = classifyImage(it.name, it.ext, info);
+        canvas = info && info.canvas;
+      } else if (it.kind === 'video') {
+        const v = await analyseVideo(it.file);
+        it.cat = classifyVideo(v.dur);
+        canvas = v.canvas;
+        if (!canvas) { canvas = thumbCanvas(); const x = canvas.getContext('2d'); x.fillStyle = '#2b2a31'; x.fillRect(0, 0, 96, 96); }
+      }
+      if (canHash && it.size > 0 && bySize.get(it.size) > 1) it.hash = await hashFile(it.file);
+    } catch (e) { /* keep the default category */ }
+    if (token !== S.token) return;
+    const j = finished++;
+    if (wantsTile(j, n)) {
+      if (canvas) it.thumb = await canvasToURL(canvas);
+      if (token !== S.token) return;
+      addTile(it);
+    }
+    S.stats.total = finished; S.statsDirty = true;
+    setStatus(`Scanning… ${fmt(finished)} / ${fmt(n)}`);
+  });
+  if (token !== S.token) return;
+
+  // duplicates: identical hash → keep the shortest name as the original
+  const groups = new Map();
+  for (const it of items) if (it.hash) { if (!groups.has(it.hash)) groups.set(it.hash, []); groups.get(it.hash).push(it); }
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    g.sort((a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name));
+    for (let i = 1; i < g.length; i++) g[i].cat = 'dupes';
+  }
+  finishScan();
+}
+
+function finishScan() {
+  // files without their own tile ride along with a tile of the same category, so counts stay exact
+  const tilesByCat = {}, has = new Set();
+  for (const t of S.tiles) { t.items = [t.item]; has.add(t.item); (tilesByCat[t.item.cat] ||= []).push(t); }
+  const rr = {};
+  for (const it of S.items) {
+    if (has.has(it)) continue;
+    let list = tilesByCat[it.cat];
+    if (!list) { list = tilesByCat[it.cat] = [addTile(it)]; continue; }
+    rr[it.cat] = (rr[it.cat] || 0) + 1;
+    list[rr[it.cat] % list.length].items.push(it);
+  }
+  for (const id in cards) cards[id].n = (tilesByCat[id] || []).length;
+  S.stats.total = S.items.length; S.statsDirty = true;
+  relayout();
+  S.phase = 'ready';
+  setStatus('Press Sort');
+  refreshButtons();
+}
+
+/* ───────────────────────── choosing a folder ───────────────────────── */
+async function loadDir(handle) {
+  const entries = [];
+  for await (const entry of handle.values()) {
+    if (entry.kind !== 'file') continue;                        // never descend into subfolders
+    if (entry.name.startsWith('.') || /^(thumbs\.db|desktop\.ini)$/i.test(entry.name)) continue;
+    entries.push({ name: entry.name, handle: entry });
+  }
+  await scan(entries, handle.name, handle);
+}
+
+async function chooseFolder() {
+  if (S.busy) return;
+  if (!window.showDirectoryPicker) { el.dirInput.click(); return; }
+  let handle;
+  try { handle = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+  catch (e) {
+    if (e.name !== 'AbortError') setStatus('Chrome could not open that folder: ' + e.message);
+    return;
+  }
+  try { await loadDir(handle); }
+  catch (e) { console.error(e); S.phase = 'idle'; refreshButtons(); setStatus('Could not read that folder: ' + e.message); }
+}
+
+// Safari / Firefox fallback: read-only, animation only
+el.dirInput.addEventListener('change', () => {
+  const files = Array.from(el.dirInput.files || []);
+  el.dirInput.value = '';
+  if (!files.length) return;
+  const folder = (files[0].webkitRelativePath || '').split('/')[0] || 'photos';
+  const direct = files.filter((f) => (f.webkitRelativePath || f.name).split('/').length <= 2 && !f.name.startsWith('.'));
+  scan(direct.map((f) => ({ name: f.name, file: f })), folder, null);
+});
+
+// drag a folder onto the page
+addEventListener('dragover', (e) => { e.preventDefault(); el.app.classList.add('drop'); });
+addEventListener('dragleave', (e) => { if (!e.relatedTarget) el.app.classList.remove('drop'); });
+addEventListener('drop', async (e) => {
+  e.preventDefault();
+  el.app.classList.remove('drop');
+  if (S.busy) return;
+  const item = e.dataTransfer && e.dataTransfer.items && e.dataTransfer.items[0];
+  if (!item) return;
+  try {
+    if (item.getAsFileSystemHandle) {
+      const handle = await item.getAsFileSystemHandle();
+      if (!handle || handle.kind !== 'directory') { setStatus('Drop a folder, not a single file'); return; }
+      await loadDir(handle);
+    } else if (item.webkitGetAsEntry) {
+      const entry = item.webkitGetAsEntry();
+      if (!entry || !entry.isDirectory) { setStatus('Drop a folder, not a single file'); return; }
+      const reader = entry.createReader(), all = [];
+      for (;;) { const batch = await new Promise((res, rej) => reader.readEntries(res, rej)); if (!batch.length) break; all.push(...batch); }
+      const fileEntries = all.filter((x) => x.isFile && !x.name.startsWith('.'));
+      const files = await Promise.all(fileEntries.map((x) => new Promise((res) => x.file(res, () => res(null)))));
+      await scan(files.filter(Boolean).map((f) => ({ name: f.name, file: f })), entry.name, null);
+    }
+  } catch (err) { console.error(err); S.phase = 'idle'; refreshButtons(); setStatus('Could not read that folder: ' + err.message); }
+});
+
+/* ───────────────────────── demo ───────────────────────── */
+function paintDemo(type) {
+  const c = thumbCanvas(), x = c.getContext('2d');
+  const grad = (stops) => { const g = x.createLinearGradient(0, 0, 0, 96); stops.forEach(([p, col]) => g.addColorStop(p, col)); x.fillStyle = g; x.fillRect(0, 0, 96, 96); };
+  const circle = (cx, cy, r, col) => { x.fillStyle = col; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill(); };
+  if (type === 'sunset') {
+    grad([[0, `hsl(${rand(28, 46)},95%,${rand(62, 72)}%)`], [0.55, `hsl(${rand(8, 22)},90%,58%)`], [1, `hsl(${rand(340, 358)},65%,${rand(34, 44)}%)`]]);
+    circle(rand(25, 70), rand(38, 60), rand(9, 16), 'rgba(255,240,190,.95)');
+    x.fillStyle = 'rgba(70,25,30,.8)'; x.beginPath(); x.moveTo(0, 96); x.lineTo(0, rand(72, 84));
+    for (let i = 1; i <= 6; i++) x.lineTo(i * 16, rand(70, 88));
+    x.lineTo(96, 96); x.fill();
+  } else if (type === 'night') {
+    grad([[0, `hsl(${rand(225, 250)},55%,${rand(7, 13)}%)`], [1, `hsl(${rand(230, 265)},50%,${rand(16, 26)}%)`]]);
+    for (let i = 0; i < 26; i++) circle(rand(0, 96), rand(0, 70), rand(0.4, 1.2), `rgba(255,255,255,${rand(0.4, 1)})`);
+    if (Math.random() < 0.5) circle(rand(20, 76), rand(16, 40), rand(5, 9), 'rgba(240,238,220,.95)');
+    x.fillStyle = 'rgba(5,6,14,.9)';
+    for (let i = 0; i < 7; i++) { const w = rand(8, 18), h = rand(8, 26); x.fillRect(i * 14, 96 - h, w, h); }
+  } else if (type === 'ocean') {
+    const hz = rand(40, 58);
+    grad([[0, `hsl(${rand(200, 214)},85%,${rand(66, 78)}%)`], [hz / 96, `hsl(${rand(195, 206)},80%,84%)`], [hz / 96 + 0.01, `hsl(${rand(204, 222)},72%,${rand(42, 52)}%)`], [1, `hsl(${rand(210, 228)},75%,${rand(28, 38)}%)`]]);
+    for (let i = 0; i < 3; i++) { const cx = rand(10, 86), cy = rand(8, hz - 12); circle(cx, cy, 7, 'rgba(255,255,255,.85)'); circle(cx + 8, cy + 2, 5.5, 'rgba(255,255,255,.85)'); circle(cx - 8, cy + 2, 5, 'rgba(255,255,255,.85)'); }
+    x.strokeStyle = 'rgba(255,255,255,.35)'; x.lineWidth = 1;
+    for (let i = 0; i < 5; i++) { const y = rand(hz + 6, 94), sx = rand(0, 70); x.beginPath(); x.moveTo(sx, y); x.lineTo(sx + rand(10, 24), y); x.stroke(); }
+  } else if (type === 'screenshot') {
+    const dark = Math.random() < 0.3;
+    x.fillStyle = dark ? '#3a3b40' : '#f6f6f8'; x.fillRect(0, 0, 96, 96);
+    x.fillStyle = `hsl(${pick([212, 262, 150, 340, 28])},70%,58%)`; x.fillRect(0, 0, 96, 16);
+    for (let i = 0; i < 5; i++) {
+      x.fillStyle = dark ? '#56575e' : '#e3e3e8'; x.fillRect(8, 24 + i * 14, 12, 9);
+      x.fillStyle = dark ? '#6a6b73' : '#cfcfd6'; x.fillRect(26, 26 + i * 14, rand(30, 60), 4);
+    }
+  } else {   // portrait / everyday: soft greens and neutrals
+    const hue = rand(96, 118), neutral = Math.random() < 0.35;
+    grad([[0, neutral ? `hsl(40,${rand(6, 12)}%,${rand(70, 80)}%)` : `hsl(${hue},${rand(22, 32)}%,${rand(62, 72)}%)`], [1, neutral ? `hsl(45,${rand(8, 14)}%,${rand(52, 62)}%)` : `hsl(${hue + 4},${rand(24, 34)}%,${rand(42, 54)}%)`]]);
+    if (type === 'portrait') {
+      circle(48, 40, 15, '#cdbfae'); x.fillStyle = '#5f6b60'; x.beginPath(); x.ellipse(48, 96, 30, 34, 0, 0, 7); x.fill();
+      x.fillStyle = '#4a4239'; x.beginPath(); x.arc(48, 36, 15.5, Math.PI, 0); x.fill();
+    } else {
+      for (let i = 0; i < 4; i++) { x.fillStyle = `hsla(${rand(90, 120)},${rand(12, 28)}%,${rand(35, 85)}%,.75)`; if (i % 2) x.fillRect(rand(0, 60), rand(30, 70), rand(18, 40), rand(14, 30)); else circle(rand(10, 86), rand(20, 80), rand(6, 16), x.fillStyle); }
+    }
+  }
+  return c;
+}
+
+async function runDemo() {
+  if (S.busy) return;
+  resetScene();
+  const token = S.token;
+  S.demo = true; S.folder = 'Camera Roll';
+  setFolderName('Camera Roll');
+  S.phase = 'scanning'; refreshButtons();
+
+  const spec = [];
+  const add = (type, n) => { for (let i = 0; i < n; i++) spec.push(type); };
+  add('sunset', 108); add('night', 88); add('ocean', 108); add('screenshot', 62); add('portrait', 72); add('everyday', 84);
+  add('video', 34); add('doc', 20);
+  for (let i = spec.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [spec[i], spec[j]] = [spec[j], spec[i]]; }
+  const nDupes = 24, total = spec.length + nDupes;
+  // sprinkle duplicates through the second half
+  for (let i = 0; i < nDupes; i++) spec.splice(Math.floor(rand(spec.length * 0.3, spec.length)), 0, 'dupe');
+
+  S.animTotal = total; computePile();
+  const docExt = ['pdf', 'zip', 'docx', 'xlsx', 'txt', 'mp3', 'csv', 'pdf'];
+  const images = [];
+  let n = 1000;
+  for (let i = 0; i < spec.length; i++) {
+    const type = spec[i];
+    let it;
+    if (type === 'doc') {
+      const ext = pick(docExt);
+      it = { name: `Document ${++n}.${ext}`, ext, kind: 'other', cat: 'docs', size: rand(0.05, 3) * MB, thumb: null };
+    } else if (type === 'dupe' && images.length) {
+      const src = pick(images);
+      it = { name: src.name.replace(/(\.\w+)$/, ' (1)$1'), ext: src.ext, kind: 'image', cat: 'dupes', size: src.size, thumb: src.thumb };
+    } else if (type === 'video') {
+      const dur = pick([rand(2, 9), rand(2, 9), rand(12, 55), rand(12, 55), rand(70, 400)]);
+      const canvas = paintDemo(pick(['sunset', 'night', 'ocean', 'everyday']));
+      it = { name: `VID_${++n}.mp4`, ext: 'mp4', kind: 'video', cat: classifyVideo(dur), size: dur * rand(1.5, 3) * MB, thumb: await canvasToURL(canvas) };
+    } else {
+      const canvas = paintDemo(type);
+      const shot = type === 'screenshot', tall = shot || type === 'portrait' || ((type === 'sunset' || type === 'night' || type === 'ocean') && Math.random() < 0.3);
+      const name = shot ? `Screenshot 2026-${String(Math.ceil(rand(0, 12))).padStart(2, '0')}-${String(Math.ceil(rand(0, 28))).padStart(2, '0')} at ${++n}.png` : `IMG_${++n}.jpg`;
+      const info = { canvas, w: tall ? 3024 : 4032, h: tall ? 4032 : 3024, avg: averageColour(canvas) };
+      it = { name, ext: extOf(name), kind: 'image', cat: classifyImage(name, extOf(name), info), size: rand(1.2, 6) * MB, thumb: await canvasToURL(canvas) };
+      images.push(it);
+    }
+    if (token !== S.token) return;
+    it.size = Math.round(it.size); it.handle = null; it.file = null; it.hash = null;
+    S.items.push(it);
+    addTile(it);
+    S.stats.total = i + 1; S.statsDirty = true;
+    setStatus(`Scanning… ${fmt(i + 1)} / ${fmt(total)}`);
+    if (i % 4 === 3) { await nextFrame(); if (token !== S.token) return; }
+  }
+  finishScan();
+}
+
+/* ───────────────────────── organising for real ───────────────────────── */
+function hidePanel() { el.panel.hidden = true; el.panel.innerHTML = ''; }
+function panel(html) {
+  el.panel.innerHTML = html;
+  if (el.panel.hidden) { el.panel.hidden = false; }
+  return (sel) => el.panel.querySelector(sel);
+}
+const usedCats = () => new Set(S.items.map((i) => i.cat)).size;
+
+function showOrganise() {
+  if (S.busy) return;
+  if (S.demo) {
+    const q = panel(`<h3>This is just the demo</h3><p>These ${fmt(S.items.length)} “photos” are made up, so there is nothing to move. Choose a real folder and the same animation ends with your files neatly organised into subfolders.</p><div class="row"><button class="btn dark" data-a="choose">Choose folder</button><button class="btn" data-a="close">Close</button></div>`);
+    q('[data-a=choose]').onclick = () => { hidePanel(); chooseFolder(); };
+    q('[data-a=close]').onclick = hidePanel;
+    return;
+  }
+  if (!S.canWrite || !S.root) {
+    const q = panel(`<h3>Organising needs Chrome or Edge</h3><p>This browser can show the animation, but it has no way to move files on your computer. Open this page in <b>Google Chrome</b> or <b>Microsoft Edge</b> on a desktop computer to organise the folder for real.</p><div class="row"><button class="btn" data-a="close">OK</button></div>`);
+    q('[data-a=close]').onclick = hidePanel;
+    return;
+  }
+  if (S.log) return showDone();
+  const n = S.items.length, x = usedCats();
+  const q = panel(`<h3>Organise ${fmt(n)} file${n === 1 ? '' : 's'}?</h3>
+    <p>They'll go into ${x} folder${x === 1 ? '' : 's'} inside <b>${esc(S.folder)}</b>. Nothing gets deleted: duplicates go into their own folder so you can check them first.</p>
+    <div class="seg"><button data-m="move">Move files</button><button data-m="copy">Copy, keep originals</button></div>
+    <div class="row"><button class="btn dark" data-a="go">Organise my files</button><button class="btn" data-a="close">Not now</button></div>`);
+  const paint = () => el.panel.querySelectorAll('[data-m]').forEach((b) => b.classList.toggle('on', b.dataset.m === S.mode));
+  el.panel.querySelectorAll('[data-m]').forEach((b) => { b.onclick = () => { S.mode = b.dataset.m; paint(); }; });
+  paint();
+  q('[data-a=close]').onclick = hidePanel;
+  q('[data-a=go]').onclick = () => organise(S.mode);
+}
+
+function showProgress(title) {
+  const q = panel(`<h3>${title}</h3><div class="bar"><i></i></div><div class="small">0 / 0</div>`);
+  const bar = q('.bar i'), txt = q('.small');
+  return (done, total) => { bar.style.transform = `scaleX(${total ? done / total : 1})`; txt.textContent = `${fmt(done)} / ${fmt(total)}`; };
+}
+
+function showDone() {
+  const L = S.log, n = L.entries.length;
+  const fails = L.errors.length ? `<p>${fmt(L.errors.length)} file${L.errors.length === 1 ? '' : 's'} could not be ${L.mode === 'move' ? 'moved' : 'copied'} and ${L.errors.length === 1 ? 'was' : 'were'} left untouched:</p><div class="fails">${L.errors.map((e) => `<div title="${esc(e.message)}">${esc(e.name)} — ${esc(e.message)}</div>`).join('')}</div>` : '';
+  const q = panel(`<h3>✓ ${fmt(n)} file${n === 1 ? '' : 's'} organised</h3>
+    <p>${L.mode === 'move' ? 'Moved' : 'Copied'} into ${L.folders} folder${L.folders === 1 ? '' : 's'} inside <b>${esc(S.folder)}</b>. Nothing was deleted.</p>${fails}
+    <div class="row">${n ? '<button class="btn" data-a="undo">Undo</button>' : ''}<button class="btn dark" data-a="close">Done</button></div>`);
+  if (n) q('[data-a=undo]').onclick = undo;
+  q('[data-a=close]').onclick = hidePanel;
+}
+
+async function exists(dir, name) {
+  try { await dir.getFileHandle(name); return true; }
+  catch (e) {
+    if (e.name === 'NotFoundError') return false;
+    return true;                         // a folder with that name, or anything unexpected: treat as taken
+  }
+}
+// Never overwrite: "name.jpg" → "name (1).jpg" → "name (2).jpg" …
+async function uniqueName(dir, reserved, name) {
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
+  for (let i = 0; i < 10000; i++) {
+    const cand = i ? `${stem} (${i})${ext}` : name, key = cand.toLowerCase();
+    if (reserved.has(key)) continue;
+    reserved.add(key);
+    if (!(await exists(dir, cand))) return cand;
+  }
+  throw new Error('no free file name');
+}
+
+async function copyVerified(srcHandle, destDir, destName) {
+  const src = await srcHandle.getFile();
+  const dest = await destDir.getFileHandle(destName, { create: true });
+  let w;
+  try {
+    w = await dest.createWritable();
+    await w.write(src);
+    await w.close();
+  } catch (e) {
+    try { await w.abort(); } catch (_) {}
+    try { await destDir.removeEntry(destName); } catch (_) {}     // only ever the half-written copy we just made
+    throw e;
+  }
+  const size = (await dest.getFile()).size;
+  if (size !== src.size) {
+    try { await destDir.removeEntry(destName); } catch (_) {}
+    throw new Error('the copy did not match the original');
+  }
+  return dest;
+}
+
+// Move srcHandle (named srcName inside srcDir) to destDir/destName. Returns the handle at the new place.
+async function moveFile(srcHandle, srcDir, srcName, destDir, destName) {
+  if (!opts.forceFallback && typeof srcHandle.move === 'function') {
+    try { await srcHandle.move(destDir, destName); return srcHandle; }
+    catch (e) {
+      // fall through to copy → verify → remove, unless the move actually happened
+      if (!(await exists(srcDir, srcName)) && await exists(destDir, destName)) return destDir.getFileHandle(destName);
+    }
+  }
+  const dest = await copyVerified(srcHandle, destDir, destName);
+  await srcDir.removeEntry(srcName);      // the original goes only after the copy is checked
+  return dest;
+}
+
+async function ensureWrite() {
+  const h = S.root;
+  if (!h.queryPermission) return true;
+  if (await h.queryPermission({ mode: 'readwrite' }) === 'granted') return true;
+  return await h.requestPermission({ mode: 'readwrite' }) === 'granted';
+}
+
+async function organise(mode) {
+  if (S.busy || S.log || !S.root || S.demo) return;
+  try {
+    if (!(await ensureWrite())) { setStatus('Chrome was not given permission to edit this folder'); return; }
+  } catch (e) { setStatus('Chrome was not given permission to edit this folder'); return; }
+  S.busy = true; refreshButtons();
+  const items = S.items.slice(), root = S.root;
+  const L = { mode, entries: [], errors: [], created: [], folders: 0 };
+  const dirs = new Map();                 // "Photos/Screenshots" → Promise<{ handle, reserved }>
+  const getDir = (path) => {
+    const key = path.join('/');
+    if (!dirs.has(key)) dirs.set(key, (async () => {
+      const parent = path.length > 1 ? (await getDir(path.slice(0, -1))).handle : root;
+      const name = path[path.length - 1];
+      let handle;
+      try { handle = await parent.getDirectoryHandle(name); }
+      catch (e) {
+        if (e.name !== 'NotFoundError') throw e;
+        handle = await parent.getDirectoryHandle(name, { create: true });
+        L.created.push({ parent, name, depth: path.length });       // remembered so Undo can tidy up
+      }
+      return { handle, reserved: new Set() };
+    })());
+    return dirs.get(key);
+  };
+  const progress = showProgress(mode === 'move' ? 'Moving your files…' : 'Copying your files…');
+  let done = 0; progress(0, items.length);
+  const usedFolders = new Set();
+
+  await pool(items, ORG_POOL, async (it) => {
+    try {
+      const path = CATS.find((c) => c.id === it.cat).path;
+      const dir = await getDir(path);
+      const destName = await uniqueName(dir.handle, dir.reserved, it.name);
+      const origName = it.name;
+      let destHandle;
+      if (mode === 'move') { destHandle = await moveFile(it.handle, root, origName, dir.handle, destName); it.handle = destHandle; }
+      else destHandle = await copyVerified(it.handle, dir.handle, destName);
+      L.entries.push({ it, dir: dir.handle, destName, destHandle, origName, size: it.size });
+      usedFolders.add(path.join('/'));
+    } catch (e) {
+      L.errors.push({ name: it.name, message: e && e.message ? e.message : String(e) });
+    }
+    progress(++done, items.length);
+  });
+
+  L.folders = usedFolders.size;
+  S.log = L; S.busy = false; refreshButtons();
+  showDone();
+}
+
+async function undo() {
+  const L = S.log;
+  if (!L || S.busy) return;
+  S.busy = true; refreshButtons();
+  const root = S.root, reserved = new Set(), failed = [];
+  const progress = showProgress('Putting everything back…');
+  let done = 0; progress(0, L.entries.length);
+
+  await pool(L.entries, ORG_POOL, async (en) => {
+    try {
+      if (L.mode === 'copy') {
+        // remove our copy only while the untouched original is still there; otherwise bring the copy home
+        let originalOk = false;
+        try { originalOk = (await (await root.getFileHandle(en.origName)).getFile()).size === en.size; } catch (e) {}
+        if (originalOk) await en.dir.removeEntry(en.destName);
+        else {
+          const back = await uniqueName(root, reserved, en.origName);
+          en.it.handle = await moveFile(en.destHandle, en.dir, en.destName, root, back); en.it.name = back;
+        }
+      } else {
+        const back = await uniqueName(root, reserved, en.origName);
+        en.it.handle = await moveFile(en.destHandle, en.dir, en.destName, root, back); en.it.name = back;
+      }
+    } catch (e) { failed.push({ name: en.destName, message: e && e.message ? e.message : String(e) }); }
+    progress(++done, L.entries.length);
+  });
+
+  // remove folders this tool created – deepest first, and only if they are empty (non-recursive remove refuses otherwise)
+  L.created.sort((a, b) => b.depth - a.depth);
+  for (const d of L.created) { try { await d.parent.removeEntry(d.name); } catch (e) {} }
+
+  S.log = null; S.busy = false; refreshButtons();
+  const n = L.entries.length - failed.length;
+  const fails = failed.length ? `<p>${fmt(failed.length)} file${failed.length === 1 ? '' : 's'} could not be put back and stayed in the new folders:</p><div class="fails">${failed.map((e) => `<div>${esc(e.name)} — ${esc(e.message)}</div>`).join('')}</div>` : '';
+  const q = panel(`<h3>↩ ${fmt(n)} file${n === 1 ? '' : 's'} put back</h3><p>${failed.length ? 'The rest of' : 'Everything in'} <b>${esc(S.folder)}</b> is back where it was.</p>${fails}<div class="row"><button class="btn dark" data-a="close">Done</button></div>`);
+  q('[data-a=close]').onclick = hidePanel;
+}
+
+/* ───────────────────────── wiring ───────────────────────── */
+el.bChoose.onclick = chooseFolder;
+el.bDemo.onclick = runDemo;
+el.bSort.onclick = startSort;
+el.bReplay.onclick = replay;
+el.bOrganise.onclick = showOrganise;
+
+// click the title to rename the folder word
+try { el.folderName.contentEditable = 'plaintext-only'; } catch (e) {}
+if (el.folderName.contentEditable !== 'plaintext-only') el.folderName.contentEditable = 'true';
+el.title.addEventListener('click', (e) => {
+  if (document.activeElement === el.folderName) return;
+  el.folderName.focus();
+  const r = document.createRange(); r.selectNodeContents(el.folderName);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+});
+el.folderName.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); el.folderName.blur(); } });
+el.folderName.addEventListener('blur', () => { getSelection().removeAllRanges(); if (!el.folderName.textContent.trim()) el.folderName.textContent = S.folder || 'photos'; });
+
+addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  const k = e.key.toLowerCase();
+  if (e.code === 'Space') { e.preventDefault(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); startSort(); }
+  else if (k === 'r') replay();
+  else if (k === 'h') document.body.classList.toggle('hide-tools');
+  else if (k === 'f') { if (document.fullscreenElement) document.exitFullscreen(); else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); }
+});
+
+computePile();
+refreshButtons();
+requestAnimationFrame(frame);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(relayout);
+
+window.__sorter = { S, cards, opts, loadDir, organise, undo, startSort, replay };
+})();
+</script>
+</body>
+</html>
